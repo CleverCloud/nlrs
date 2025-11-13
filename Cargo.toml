@@ -1,0 +1,20 @@
+[package]
+name = "nlrs"
+description = "A minimal rust crate for simple and efficient Netlink requests"
+version = "0.2.0"
+edition = "2024"
+authors = ["Hélian Caumeil <helian.caumeil@clever-cloud.com>"]
+license-file = "LICENSE"
+readme = "README.md"
+repository = "https://github.com/CleverCloud/nlrs"
+keywords = ["network", "netlink", "rtnetlink", "ipvs", "wireguard"]
+
+[dependencies.tokio]
+version = "1.48.0"
+optional = true
+default-features = false
+
+[features]
+default = []
+tokio-socket = ["tokio/net"]
+tokio-netns = ["tokio/signal"]
