@@ -139,8 +139,8 @@ pub mod link_info_attributes {
 
 #[derive(Debug)]
 pub enum LinkAttribute {
-    Address([u8; 6]),
-    BroadcastAddress([u8; 6]),
+    Address(Vec<u8>),
+    BroadcastAddress(Vec<u8>),
     InterfaceName(String),
     Mtu(u32),
     Link(u32),

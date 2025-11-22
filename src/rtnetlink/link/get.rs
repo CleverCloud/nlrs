@@ -61,21 +61,17 @@ pub fn read_link_attr(
     attribute: crate::netlink::attr::NlAttribute,
 ) -> Result<super::LinkAttribute, crate::ResponseError<GetLinkParseError>> {
     match attribute.r#type {
-        super::link_attributes::IFLA_ADDRESS => crate::netlink::attr::recover_read(
-            reader,
-            attribute.len as usize,
-            crate::netlink::attr::read_array_attr,
-            crate::ResponseError::ProtocolParse(GetLinkParseError::UnparsableAddress),
-        )
-        .map(super::LinkAttribute::Address),
+        super::link_attributes::IFLA_ADDRESS => {
+            crate::netlink::attr::read_vec_attr(reader, attribute.len as usize)
+                .map_err(crate::ResponseError::from)
+                .map(super::LinkAttribute::Address)
+        }
 
-        super::link_attributes::IFLA_BROADCAST => crate::netlink::attr::recover_read(
-            reader,
-            attribute.len as usize,
-            crate::netlink::attr::read_array_attr,
-            crate::ResponseError::ProtocolParse(GetLinkParseError::UnparsableBroadcastAddress),
-        )
-        .map(super::LinkAttribute::BroadcastAddress),
+        super::link_attributes::IFLA_BROADCAST => {
+            crate::netlink::attr::read_vec_attr(reader, attribute.len as usize)
+                .map_err(crate::ResponseError::from)
+                .map(super::LinkAttribute::BroadcastAddress)
+        }
 
         super::link_attributes::IFLA_IFNAME => crate::netlink::attr::recover_read(
             reader,

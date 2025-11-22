@@ -410,6 +410,16 @@ pub fn read_array_attr<const N: usize>(
     }
 }
 
+/// try to read an dynamic array, does not read bytes otherwise
+pub fn read_vec_attr(
+    reader: &mut impl std::io::Read,
+    len: usize,
+) -> Result<Vec<u8>, std::io::Error> {
+    let mut res = vec![0; len];
+    reader.read_exact(&mut res)?;
+    Ok(res)
+}
+
 /// try to read an ip address, does not read bytes otherwise
 pub fn read_ip_address_attr(
     reader: &mut impl std::io::Read,
