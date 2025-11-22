@@ -88,7 +88,7 @@ pub fn read_get_info_response(
     let remaining_bytes = len - crate::genetlink::msg::GeNlMsgHeader::SIZE;
 
     crate::netlink::attr::NlAttributeIter::new(reader, read_get_info_attr, remaining_bytes)
-        .map(|e| e.map_err(|e| e.into()).and_then(|e| e))
+        .map(|e| e.map_err(Into::into).and_then(core::convert::identity))
         .collect()
 }
 
@@ -145,7 +145,9 @@ impl<'a, Buffer: std::io::Write> GenericMessageBuilder<'a> for GetInfoMessageBui
         let mut message = crate::netlink::msg::NlMsgIter::new(reader, read_get_info_response);
 
         let mut response = match message.next() {
-            Some(e) => e.map_err(crate::ResponseError::HeaderParse).and_then(|x| x),
+            Some(e) => e
+                .map_err(crate::ResponseError::HeaderParse)
+                .and_then(core::convert::identity),
             None => Err(crate::ResponseError::ProtocolParse(
                 GetInfoParseError::NoResponse,
             )),

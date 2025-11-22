@@ -137,7 +137,7 @@ pub fn read_link_msg(
 
     let attributes: Result<Vec<super::LinkAttribute>, crate::ResponseError<GetLinkParseError>> =
         crate::netlink::attr::NlAttributeIter::new(reader, read_link_attr, remaining_bytes)
-            .map(|e| e.map_err(|e| e.into()).and_then(|e| e))
+            .map(|e| e.map_err(Into::into).and_then(core::convert::identity))
             .collect();
 
     Ok(RawLinkDetails {

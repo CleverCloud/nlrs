@@ -159,7 +159,7 @@ pub fn read_family_resolution(
     let remaining_bytes = len - GeNlMsgHeader::SIZE;
 
     crate::netlink::attr::NlAttributeIter::new(reader, read_family_resolution_attr, remaining_bytes)
-        .map(|e| e.map_err(|e| e.into()).and_then(|e| e))
+        .map(|e| e.map_err(Into::into).and_then(core::convert::identity))
         .collect()
 }
 
@@ -219,7 +219,9 @@ impl<'a, Buffer: std::io::Write> MessageBuilder<'a> for ResolveFamilyIdMsgBuilde
         let mut i = crate::netlink::msg::NlMsgIter::new(reader, read_family_resolution);
 
         let mut attributes = match i.next() {
-            Some(e) => e.map_err(crate::ResponseError::HeaderParse).and_then(|x| x),
+            Some(e) => e
+                .map_err(crate::ResponseError::HeaderParse)
+                .and_then(core::convert::identity),
             None => Err(crate::ResponseError::ProtocolParse(
                 ResolveFamilyIdParseError::NoResponse,
             )),

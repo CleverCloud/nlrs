@@ -237,7 +237,7 @@ pub fn read_neighbour_msg(
 
     let attributes: Result<Vec<NeighbourAttribute>, crate::ResponseError<GetNeighbourParseError>> =
         crate::netlink::attr::NlAttributeIter::new(reader, read_neighbour_attr, remaining_bytes)
-            .map(|e| e.map_err(|e| e.into()).and_then(|e| e))
+            .map(|e| e.map_err(Into::into).and_then(core::convert::identity))
             .collect();
 
     Ok(Neighbour {
@@ -304,7 +304,7 @@ impl<'a, Buffer: std::io::Write> MessageBuilder<'a> for GetNeighMsgBuilder<'a, B
         read_get_neighbour_response(reader)
             .map(|e| {
                 e.map_err(crate::ResponseError::<Self::ParseError>::HeaderParse)
-                    .and_then(|e| e)
+                    .and_then(core::convert::identity)
             })
             .collect()
     }

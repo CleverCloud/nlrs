@@ -182,7 +182,7 @@ pub fn read_get_service_cmd_attr(
             read_get_service_attr,
             attribute.len as usize,
         )
-        .map(|e| e.map_err(|e| e.into()).and_then(|e| e))
+        .map(|e| e.map_err(Into::into).and_then(core::convert::identity))
         .collect()
     } else {
         crate::netlink::utils::skip_n_bytes(reader, attribute.len as usize)?;
@@ -200,7 +200,7 @@ pub fn read_get_service_msg(
     let remaining_bytes = len - crate::genetlink::msg::GeNlMsgHeader::SIZE;
 
     crate::netlink::attr::NlAttributeIter::new(reader, read_get_service_cmd_attr, remaining_bytes)
-        .map(|e| e.map_err(|e| e.into()).and_then(|e| e))
+        .map(|e| e.map_err(Into::into).and_then(core::convert::identity))
         .next()
         .unwrap_or(Err(crate::ResponseError::ProtocolParse(
             GetServiceParseError::NoResponse,
@@ -272,7 +272,7 @@ impl<'a, Buffer: std::io::Write> GenericMessageBuilder<'a>
         let services = read_get_service_response(reader)
             .map(|e| {
                 e.map_err(crate::ResponseError::<Self::ParseError>::HeaderParse)
-                    .and_then(|e| e)
+                    .and_then(core::convert::identity)
             })
             .collect::<Result<Vec<_>, _>>()?;
 

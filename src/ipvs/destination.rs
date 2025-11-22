@@ -310,7 +310,7 @@ pub fn read_get_destination_cmd_attr(
             read_get_dest_attr,
             attribute.len as usize,
         )
-        .map(|e| e.map_err(|e| e.into()).and_then(|e| e))
+        .map(|e| e.map_err(Into::into).and_then(core::convert::identity))
         .collect()
     } else {
         crate::netlink::utils::skip_n_bytes(reader, attribute.len as usize)?;
@@ -332,7 +332,7 @@ pub fn read_get_destination_msg(
         read_get_destination_cmd_attr,
         remaining_bytes,
     )
-    .map(|e| e.map_err(|e| e.into()).and_then(|e| e))
+    .map(|e| e.map_err(Into::into).and_then(core::convert::identity))
     .next()
     .unwrap_or(Err(crate::ResponseError::ProtocolParse(
         GetDestinationParseError::NoResponse,
