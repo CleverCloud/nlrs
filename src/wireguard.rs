@@ -665,7 +665,7 @@ pub fn read_get_device_response(
 }
 
 /// set message type and flags for a WG_CMD_GET_DEVICE request
-pub fn get_service_nl_header(header: &mut NlMsgHeader, family: u16) {
+pub fn get_device_nl_header(header: &mut NlMsgHeader, family: u16) {
     const FLAGS: u16 = NLM_F_REQUEST | NLM_F_DUMP;
     header.r#type = family;
     header.flags = FLAGS;
@@ -692,7 +692,7 @@ impl<'a, Buffer: std::io::Write> GenericMessageBuilder<'a>
         family: u16,
         input: Self::Input,
     ) -> Self {
-        get_service_nl_header(&mut nl_msg_header, family);
+        get_device_nl_header(&mut nl_msg_header, family);
 
         Self {
             buffer,
@@ -763,7 +763,7 @@ impl<'a, Buffer: std::io::Write> GenericMessageBuilder<'a>
         family: u16,
         input: Self::Input,
     ) -> Self {
-        get_service_nl_header(&mut nl_msg_header, family);
+        get_device_nl_header(&mut nl_msg_header, family);
 
         Self {
             buffer,
@@ -1137,7 +1137,7 @@ fn write_wireguard_set_message<B: std::io::Write>(
 }
 
 /// set message type and flags for a WG_CMD_SET_DEVICE request
-pub fn set_service_nl_header(header: &mut NlMsgHeader, family: u16) {
+pub fn set_device_nl_header(header: &mut NlMsgHeader, family: u16) {
     const FLAGS: u16 = NLM_F_REQUEST | NLM_F_ACK;
     header.r#type = family;
     header.flags = FLAGS;
@@ -1173,7 +1173,7 @@ impl<'a, Buffer: std::io::Write> GenericMessageBuilder<'a>
         family: u16,
         input: Self::Input,
     ) -> Self {
-        set_service_nl_header(&mut nl_msg_header, family);
+        set_device_nl_header(&mut nl_msg_header, family);
 
         Self {
             buffer,
@@ -1257,7 +1257,7 @@ impl<'a, Buffer: std::io::Write> GenericMessageBuilder<'a>
         family: u16,
         input: Self::Input,
     ) -> Self {
-        set_service_nl_header(&mut nl_msg_header, family);
+        set_device_nl_header(&mut nl_msg_header, family);
 
         Self {
             buffer,
