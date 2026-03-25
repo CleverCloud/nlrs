@@ -342,6 +342,7 @@ pub fn read_get_destination_msg(
 pub fn read_get_destination_response<R: std::io::Read>(
     reader: &mut R,
 ) -> crate::netlink::msg::NlMsgIter<
+    '_,
     R,
     Result<Vec<DestinationAttribute>, crate::ResponseError<GetDestinationParseError>>,
 > {

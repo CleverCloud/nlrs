@@ -570,8 +570,11 @@ pub fn read_route_msg(
 
 fn read_get_route_response<R: std::io::Read>(
     reader: &mut R,
-) -> crate::netlink::msg::NlMsgIter<R, Result<RouteDetails, crate::ResponseError<GetRouteParseError>>>
-{
+) -> crate::netlink::msg::NlMsgIter<
+    '_,
+    R,
+    Result<RouteDetails, crate::ResponseError<GetRouteParseError>>,
+> {
     crate::netlink::msg::NlMsgIter::new(reader, read_route_msg)
 }
 
