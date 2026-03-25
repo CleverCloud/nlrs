@@ -4,6 +4,7 @@ mod add;
 mod del;
 mod get;
 pub mod ipvlan;
+pub mod master;
 mod state;
 pub mod veth;
 
