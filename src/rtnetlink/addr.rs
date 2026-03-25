@@ -238,6 +238,7 @@ pub fn read_addr_msg(
 fn read_get_addr_response<R: std::io::Read>(
     reader: &mut R,
 ) -> crate::netlink::msg::NlMsgIter<
+    '_,
     R,
     Result<RawAddressDetails, crate::ResponseError<GetAddressParseError>>,
 > {

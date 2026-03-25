@@ -187,10 +187,10 @@ pub fn netns_exists(netns_name: &str) -> bool {
 /// need root or CAP_NET_ADMIN permissions.
 pub fn create_netns(name: &str) -> Result<(), NetnsCreationError> {
     let netns_dir = Path::new(NETNS_PATH);
-    if !netns_dir.exists() {
-        if let Err(e) = std::fs::create_dir_all(netns_dir) {
-            return Err(NetnsCreationError::NetnsDirCreationFailed(e));
-        }
+    if !netns_dir.exists()
+        && let Err(e) = std::fs::create_dir_all(netns_dir)
+    {
+        return Err(NetnsCreationError::NetnsDirCreationFailed(e));
     }
 
     let netns_path = netns_dir.join(name);

@@ -210,6 +210,7 @@ pub fn read_get_service_msg(
 pub fn read_get_service_response<R: std::io::Read>(
     reader: &mut R,
 ) -> crate::netlink::msg::NlMsgIter<
+    '_,
     R,
     Result<Vec<ServiceAttribute>, crate::ResponseError<GetServiceParseError>>,
 > {

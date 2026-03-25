@@ -153,6 +153,7 @@ pub fn read_link_msg(
 fn read_get_link_response<R: std::io::Read>(
     reader: &mut R,
 ) -> crate::netlink::msg::NlMsgIter<
+    '_,
     R,
     Result<RawLinkDetails, crate::ResponseError<GetLinkParseError>>,
 > {

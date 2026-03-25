@@ -252,6 +252,7 @@ pub fn read_neighbour_msg(
 fn read_get_neighbour_response<R: std::io::Read>(
     reader: &mut R,
 ) -> crate::netlink::msg::NlMsgIter<
+    '_,
     R,
     Result<Neighbour, crate::ResponseError<GetNeighbourParseError>>,
 > {
