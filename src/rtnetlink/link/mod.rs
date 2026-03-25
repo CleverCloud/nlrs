@@ -3,6 +3,7 @@
 mod add;
 mod del;
 mod get;
+pub mod ipvlan;
 mod state;
 pub mod veth;
 
