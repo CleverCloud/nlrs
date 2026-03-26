@@ -10,7 +10,7 @@ repository = "https://github.com/CleverCloud/nlrs"
 keywords = ["network", "netlink", "rtnetlink", "ipvs", "wireguard"]
 
 [dependencies.tokio]
-version = "1.48.0"
+version = "1.50.0"
 optional = true
 default-features = false
 
