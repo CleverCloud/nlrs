@@ -41,7 +41,7 @@ impl NetlinkSocket<Vec<u8>, Vec<u8>, NlSocket> {
             snd_buffer: ::std::io::Cursor::new(Vec::new()),
             rcv_buffer: ::std::io::Cursor::new(vec![0; capacity]),
             socket,
-            sequence_number: 1,
+            sequence_number: 0,
         }
     }
 }
