@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.2.1 - 2026-03-26
+
+### 🌟 Features
+
+- We implemented **ipvlan child creation** in network namespaces. This is useful when upstream network equipment filters by MAC and a unique MAC per namespace is not feasible.
+- We provided **interface enslaving message**, to set or unset the master device of a network interface. This is used to enslave an interface to a bridge, bond, or other master device.
+- We added **u64 and u128 attributes** reading and writing helper functions.
+- We added **ip v4/v6 attributes** reading and writing helper functions.
+
+### ✍️ Changed
+
+- We renamed some functions in the wireguard implementation to better match what they actualy do.
+
+### ⛑️ Fixed
+
+- We fixed, **variable length link address** reading, by using vectors instead of fixed length arrays.
+- We corrected **sequence number start** in messages by starting the sequence at 0 and not 1. 
+
 ## 0.2.0 - 2025-11-13
 
 Initial open-source release of **nlrs** - a minimal Rust crate for simple and efficient Netlink requests to communicate with the Linux kernel's networking API. This release consolidates all core functionality including Generic Netlink, IPVS, RTNetlink, WireGuard support, and network namespace utilities.
