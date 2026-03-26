@@ -302,38 +302,59 @@ pub fn write_string_attr(
     Ok(written_bytes)
 }
 
+/// try to write an ip v4 address
+pub fn write_ip4_address_attr(
+    writer: &mut impl std::io::Write,
+    r#type: u16,
+    ip_address: &std::net::Ipv4Addr,
+) -> Result<usize, std::io::Error> {
+    let mut written_bytes = 0;
+
+    let attr = NlAttribute {
+        len: set_attr_length(4) as u16,
+        r#type,
+    };
+
+    written_bytes += attr.write(writer)?;
+    written_bytes += writer.write(&ip_address.octets())?;
+
+    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+
+    Ok(written_bytes)
+}
+
+/// try to write an ip v6 address
+pub fn write_ip6_address_attr(
+    writer: &mut impl std::io::Write,
+    r#type: u16,
+    ip_address: &std::net::Ipv6Addr,
+) -> Result<usize, std::io::Error> {
+    let mut written_bytes = 0;
+
+    let attr = NlAttribute {
+        len: set_attr_length(16) as u16,
+        r#type,
+    };
+
+    written_bytes += attr.write(writer)?;
+    written_bytes += writer.write(&ip_address.octets())?;
+
+    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+
+    Ok(written_bytes)
+}
+
 /// try to write an ip address
+#[inline]
 pub fn write_ip_address_attr(
     writer: &mut impl std::io::Write,
     r#type: u16,
     ip_address: &std::net::IpAddr,
 ) -> Result<usize, std::io::Error> {
-    let mut written_bytes = 0;
-
     match ip_address {
-        std::net::IpAddr::V4(ipv4_addr) => {
-            let attr = NlAttribute {
-                len: set_attr_length(4) as u16,
-                r#type,
-            };
-
-            written_bytes += attr.write(writer)?;
-            written_bytes += writer.write(&ipv4_addr.octets())?;
-        }
-        std::net::IpAddr::V6(ipv6_addr) => {
-            let attr = NlAttribute {
-                len: set_attr_length(16) as u16,
-                r#type,
-            };
-
-            written_bytes += attr.write(writer)?;
-            written_bytes += writer.write(&ipv6_addr.octets())?;
-        }
+        std::net::IpAddr::V4(ipv4_addr) => write_ip4_address_attr(writer, r#type, ipv4_addr),
+        std::net::IpAddr::V6(ipv6_addr) => write_ip6_address_attr(writer, r#type, ipv6_addr),
     }
-
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
-
-    Ok(written_bytes)
 }
 
 /// util to skip the correct amount of bytes when a parser failed
@@ -472,6 +493,34 @@ pub fn read_vec_attr(
     let mut res = vec![0; len];
     reader.read_exact(&mut res)?;
     Ok(res)
+}
+
+/// try to read an ip v4 address, does not read bytes otherwise
+pub fn read_ip4_address_attr(
+    reader: &mut impl std::io::Read,
+    len: usize,
+) -> Result<Option<std::net::Ipv4Addr>, std::io::Error> {
+    if len == 4 {
+        let mut buff = [0u8; 4];
+        reader.read_exact(&mut buff)?;
+        Ok(Some(std::net::Ipv4Addr::from(buff)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// try to read an ip v6 address, does not read bytes otherwise
+pub fn read_ip6_address_attr(
+    reader: &mut impl std::io::Read,
+    len: usize,
+) -> Result<Option<std::net::Ipv6Addr>, std::io::Error> {
+    if len == 16 {
+        let mut buff = [0u8; 16];
+        reader.read_exact(&mut buff)?;
+        Ok(Some(std::net::Ipv6Addr::from(buff)))
+    } else {
+        Ok(None)
+    }
 }
 
 /// try to read an ip address, does not read bytes otherwise
