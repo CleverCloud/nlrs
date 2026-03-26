@@ -181,6 +181,46 @@ pub fn write_u32_attr(
     Ok(written_bytes)
 }
 
+/// try to write an u64
+pub fn write_u64_attr(
+    writer: &mut impl std::io::Write,
+    r#type: u16,
+    value: u64,
+) -> Result<usize, std::io::Error> {
+    let mut written_bytes = 0;
+    let attr = crate::netlink::attr::NlAttribute {
+        len: crate::netlink::attr::set_attr_length(8) as u16,
+        r#type,
+    };
+
+    written_bytes += attr.write(writer)?;
+    written_bytes += writer.write(&u64::to_le_bytes(value))?;
+
+    written_bytes = crate::netlink::attr::nl_attr_align_writer(writer, written_bytes)?;
+
+    Ok(written_bytes)
+}
+
+/// try to write an u128
+pub fn write_u128_attr(
+    writer: &mut impl std::io::Write,
+    r#type: u16,
+    value: u128,
+) -> Result<usize, std::io::Error> {
+    let mut written_bytes = 0;
+    let attr = crate::netlink::attr::NlAttribute {
+        len: crate::netlink::attr::set_attr_length(16) as u16,
+        r#type,
+    };
+
+    written_bytes += attr.write(writer)?;
+    written_bytes += writer.write(&u128::to_le_bytes(value))?;
+
+    written_bytes = crate::netlink::attr::nl_attr_align_writer(writer, written_bytes)?;
+
+    Ok(written_bytes)
+}
+
 /// try to write an i32
 pub fn write_i32_attr(
     writer: &mut impl std::io::Write,
@@ -391,6 +431,20 @@ pub fn read_u64_attr(
         let mut buff = [0u8; 8];
         reader.read_exact(&mut buff)?;
         Ok(Some(u64::from_le_bytes(buff)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// try to read a u128, does not read bytes otherwise
+pub fn read_u128_attr(
+    reader: &mut impl std::io::Read,
+    len: usize,
+) -> Result<Option<u128>, std::io::Error> {
+    if len == 16 {
+        let mut buff = [0u8; 16];
+        reader.read_exact(&mut buff)?;
+        Ok(Some(u128::from_le_bytes(buff)))
     } else {
         Ok(None)
     }
