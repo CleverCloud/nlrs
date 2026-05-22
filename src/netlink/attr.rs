@@ -13,7 +13,7 @@ impl NlAttribute {
 
     #[inline]
     pub fn write(&self, writer: &mut impl std::io::Write) -> Result<usize, std::io::Error> {
-        super::utils::transprose_write(self, writer)
+        super::utils::transpose_write(self, writer)
     }
 
     #[inline]
@@ -116,7 +116,7 @@ pub fn write_u8_attr(
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(&u8::to_le_bytes(value))?;
 
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -136,7 +136,7 @@ pub fn write_u16_attr(
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(&u16::to_le_bytes(value))?;
 
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -156,7 +156,7 @@ pub fn write_be_u16_attr(
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(&value.to_be_bytes())?;
 
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -176,7 +176,7 @@ pub fn write_u32_attr(
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(&u32::to_le_bytes(value))?;
 
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -188,15 +188,15 @@ pub fn write_u64_attr(
     value: u64,
 ) -> Result<usize, std::io::Error> {
     let mut written_bytes = 0;
-    let attr = crate::netlink::attr::NlAttribute {
-        len: crate::netlink::attr::set_attr_length(8) as u16,
+    let attr = NlAttribute {
+        len: set_attr_length(8) as u16,
         r#type,
     };
 
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(&u64::to_le_bytes(value))?;
 
-    written_bytes = crate::netlink::attr::nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -208,15 +208,15 @@ pub fn write_u128_attr(
     value: u128,
 ) -> Result<usize, std::io::Error> {
     let mut written_bytes = 0;
-    let attr = crate::netlink::attr::NlAttribute {
-        len: crate::netlink::attr::set_attr_length(16) as u16,
+    let attr = NlAttribute {
+        len: set_attr_length(16) as u16,
         r#type,
     };
 
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(&u128::to_le_bytes(value))?;
 
-    written_bytes = crate::netlink::attr::nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -236,7 +236,7 @@ pub fn write_i32_attr(
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(&i32::to_le_bytes(value))?;
 
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -256,7 +256,7 @@ pub fn write_array_attr<const N: usize>(
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(&value)?;
 
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -276,7 +276,7 @@ pub fn write_slice_attr(
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(value)?;
 
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -297,7 +297,7 @@ pub fn write_string_attr(
     written_bytes += writer.write(str.as_bytes())?;
     written_bytes += writer.write(b"\0")?;
 
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -318,7 +318,7 @@ pub fn write_ip4_address_attr(
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(&ip_address.octets())?;
 
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }
@@ -339,7 +339,7 @@ pub fn write_ip6_address_attr(
     written_bytes += attr.write(writer)?;
     written_bytes += writer.write(&ip_address.octets())?;
 
-    written_bytes = nl_attr_align_writer(writer, written_bytes)?;
+    written_bytes += nl_attr_align_writer(writer, written_bytes)?;
 
     Ok(written_bytes)
 }

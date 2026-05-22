@@ -427,7 +427,7 @@ fn write_socket_address_attr(
                 sin_addr: socket_addr_v4.ip().octets(),
                 sin_zero: [0; 8],
             };
-            written_bytes += crate::netlink::utils::transprose_write(&socket_address, writter)?;
+            written_bytes += crate::netlink::utils::transpose_write(&socket_address, writter)?;
         }
         core::net::SocketAddr::V6(socket_addr_v6) => {
             written_bytes += crate::netlink::attr::NlAttribute {
@@ -444,7 +444,7 @@ fn write_socket_address_attr(
                 sin6_addr: socket_addr_v6.ip().octets(),
                 sin6_scope_id: 0,
             };
-            written_bytes += crate::netlink::utils::transprose_write(&socket_address, writter)?;
+            written_bytes += crate::netlink::utils::transpose_write(&socket_address, writter)?;
         }
     };
 

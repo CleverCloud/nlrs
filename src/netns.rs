@@ -606,7 +606,7 @@ pub fn execute_into_netns<I, P>(
                 }
                 Err(error) => {
                     let inner_error: NetnsInnerExecutionError = error.into();
-                    _ = crate::netlink::utils::transprose_write(
+                    _ = crate::netlink::utils::transpose_write(
                         &inner_error,
                         &mut core::slice::from_raw_parts_mut(
                             shared,
@@ -694,7 +694,7 @@ pub async fn async_execute_into_netns<I, P>(
                 }
                 Err(error) => {
                     let inner_error: NetnsInnerExecutionError = error.into();
-                    _ = crate::netlink::utils::transprose_write(
+                    _ = crate::netlink::utils::transpose_write(
                         &inner_error,
                         &mut core::slice::from_raw_parts_mut(
                             shared,

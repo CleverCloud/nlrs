@@ -77,7 +77,7 @@ impl NlMsgHeader {
 
     #[inline]
     pub fn write(&self, writer: &mut impl std::io::Write) -> Result<usize, std::io::Error> {
-        super::utils::transprose_write(self, writer)
+        super::utils::transpose_write(self, writer)
     }
 
     #[inline]
