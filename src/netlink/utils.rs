@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 /// write a structure to a bytes writter
 #[inline]
-pub fn transprose_write<T: Sized>(
+pub fn transpose_write<T: Sized>(
     value: &T,
     writer: &mut impl std::io::Write,
 ) -> Result<usize, std::io::Error> {

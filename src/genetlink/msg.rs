@@ -26,7 +26,7 @@ impl GeNlMsgHeader {
 
     #[inline]
     pub fn write(&self, writer: &mut impl std::io::Write) -> Result<usize, std::io::Error> {
-        crate::netlink::utils::transprose_write(self, writer)
+        crate::netlink::utils::transpose_write(self, writer)
     }
 
     #[inline]
