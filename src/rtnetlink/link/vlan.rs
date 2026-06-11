@@ -32,7 +32,7 @@ use crate::{
 };
 
 /// VLAN attributes as defined in `linux/if_link.h`
-pub mod vlan_attributes {
+pub mod vlan_infos {
     /// VLAN id (`IFLA_VLAN_ID` inside `IFLA_INFO_DATA`)
     pub const IFLA_VLAN_ID: u16 = 1;
 }
@@ -153,7 +153,7 @@ impl<'a, Buffer: std::io::Write> MessageBuilder<'a> for AddVlanMsgBuilder<'a, Bu
         // IFLA_VLAN_ID = vlan identifier
         written_bytes += crate::netlink::attr::write_u16_attr(
             self.buffer,
-            vlan_attributes::IFLA_VLAN_ID,
+            vlan_infos::IFLA_VLAN_ID,
             self.vlan_id,
         )?;
 
@@ -189,7 +189,7 @@ mod tests {
         let (_, written) = builder.build().expect("build should succeed");
         assert!(written > 0);
         assert!(
-            buffer.windows(2).any(|w| w == 687u16.to_ne_bytes()),
+            buffer.windows(2).any(|w| w == 687u16.to_le_bytes()),
             "vlan id bytes not found in message"
         );
         assert!(buffer.windows(4).any(|w| w == b"vlan"));
