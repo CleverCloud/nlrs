@@ -7,6 +7,7 @@ pub mod ipvlan;
 pub mod master;
 mod state;
 pub mod veth;
+pub mod vlan;
 
 pub use add::*;
 pub use del::*;
