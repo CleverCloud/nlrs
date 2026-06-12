@@ -1,7 +1,7 @@
 [package]
 name = "nlrs"
 description = "A minimal rust crate for simple and efficient Netlink requests"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 authors = ["Hélian Caumeil <helian.caumeil@clever-cloud.com>"]
 license-file = "LICENSE"
@@ -9,8 +9,11 @@ readme = "README.md"
 repository = "https://github.com/CleverCloud/nlrs"
 keywords = ["network", "netlink", "rtnetlink", "ipvs", "wireguard"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [dependencies.tokio]
-version = "1.50.0"
+version = "=1.52.3"
 optional = true
 default-features = false
 
