@@ -12,16 +12,16 @@ Netlink is a powerful protocol in Linux, commonly used for tasks such as managin
 
 ## Features
 
-- Netlink and Generic Netlink helper to implemement protocols
+- Netlink and Generic Netlink helper to implement protocols
 - Rtnetlink protocols 
 - Ipvs protocol
 - Async requests with tokio
 - Network namespaces
 - Easy to copy, modify, or integrate into your own codebase
 
-## Altnernatives
+## Alternatives
 
-They are other crate to send netlink request:
+There are other crates to send netlink requests:
 
 - [https://github.com/rust-netlink](https://github.com/rust-netlink)
 - [https://github.com/jbaublitz/neli](https://github.com/jbaublitz/neli)
