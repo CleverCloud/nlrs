@@ -873,11 +873,7 @@ impl From<WireguardPeer> for WireguardPeerConfig {
     fn from(value: WireguardPeer) -> Self {
         WireguardPeerConfig {
             public_key: value.public_key,
-            pre_shared_key: if value
-                .pre_shared_key
-                .iter()
-                .fold(true, |acc, e| *e == 0 && acc)
-            {
+            pre_shared_key: if value.pre_shared_key.iter().all(|e| *e == 0) {
                 None
             } else {
                 Some(value.pre_shared_key)
