@@ -219,7 +219,7 @@ impl<Snd: Write + AsRef<[u8]>, Rcv: Write + AsRef<[u8]> + AsMut<[u8]>>
     AsyncNetlinkSocket<Snd, Rcv>
 {
     pub fn new(socket: NetlinkSocket<Snd, Rcv, NlSocket>) -> Result<Self, std::io::Error> {
-        let socket = tokio::io::unix::AsyncFd::new(socket)?;
+        let socket = unsafe { tokio::io::unix::AsyncFd::register(socket)? };
         Ok(Self { socket })
     }
 }
