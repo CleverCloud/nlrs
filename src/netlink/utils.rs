@@ -32,15 +32,16 @@ pub fn transpose_read<T: Sized>(reader: &mut impl std::io::Read) -> Result<T, st
 }
 
 /// util to skip n bytes when parsing has failed
-pub fn skip_n_bytes(reader: &mut impl std::io::Read, mut n: usize) -> Result<(), std::io::Error> {
+pub fn skip_n_bytes(reader: &mut impl std::io::Read, n: usize) -> Result<usize, std::io::Error> {
     let mut buf = [0u8; 1024];
-    while n > 0 {
-        let to_read = std::cmp::min(n, buf.len());
+    let mut total_read = 0;
+    while total_read < n {
+        let to_read = std::cmp::min(n - total_read, buf.len());
         let read = reader.read(&mut buf[..to_read])?;
         if read == 0 {
             break;
         } // EOF
-        n -= read;
+        total_read += read;
     }
-    Ok(())
+    Ok(total_read)
 }
