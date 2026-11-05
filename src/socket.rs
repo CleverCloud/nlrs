@@ -139,44 +139,62 @@ where
             }
 
             let rcv_buffer = self.rcv_buffer.get_mut();
-            let buf = &mut rcv_buffer.as_mut()[total_read_bytes..];
-            if buf.is_empty() {
-                rcv_buffer.write_all(&datagram[..read_bytes])?;
-            } else if let Some((left, _)) = buf.split_at_mut_checked(read_bytes) {
-                left.copy_from_slice(&datagram[..read_bytes]);
-            } else {
-                let (left, right) = datagram.split_at(buf.len());
-                buf.copy_from_slice(left);
-                rcv_buffer.write_all(right)?;
-            }
-            total_read_bytes += read_bytes;
-
-            let reader_slice = &rcv_buffer.as_ref()[parsed..total_read_bytes];
-            let mut remaining_bytes = reader_slice.len();
-            let mut reader = std::io::Cursor::new(reader_slice);
-            loop {
-                if remaining_bytes < crate::netlink::msg::NlMsgHeader::SIZE {
-                    break;
-                }
-                let header = crate::netlink::msg::NlMsgHeader::read(&mut reader)?;
-                let message_len = header.len as usize;
-                if remaining_bytes < message_len {
-                    break;
-                }
-                let to_skip = message_len - crate::netlink::msg::NlMsgHeader::SIZE;
-                let skipped = crate::netlink::utils::skip_n_bytes(&mut reader, to_skip)?;
-                if skipped != to_skip {
-                    return Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
-                }
-                remaining_bytes -= message_len;
-                parsed += message_len;
-
-                if !header.is_multi() || header.is_done() {
-                    return Ok(parsed);
-                }
+            if receive_step(
+                &mut parsed,
+                &mut total_read_bytes,
+                &datagram[..read_bytes],
+                rcv_buffer,
+            )? {
+                return Ok(parsed);
             }
         }
     }
+}
+
+fn receive_step<Rcv: Write + AsRef<[u8]> + AsMut<[u8]>>(
+    parsed: &mut usize,
+    total_read_bytes: &mut usize,
+    datagram: &[u8],
+    rcv_buffer: &mut Rcv,
+) -> Result<bool, std::io::Error> {
+    let buf = &mut rcv_buffer.as_mut()[*total_read_bytes..];
+    *total_read_bytes += datagram.len();
+
+    // if there is still leftover space in the rcv_buffer, we need to ovewrite it first
+    // if it is smaller than the datagram, we split it and write the chunks separately
+    if buf.is_empty() {
+        rcv_buffer.write_all(datagram)?;
+    } else if let Some((left, _)) = buf.split_at_mut_checked(datagram.len()) {
+        left.copy_from_slice(datagram);
+    } else {
+        let (left, right) = datagram.split_at(buf.len());
+        buf.copy_from_slice(left);
+        rcv_buffer.write_all(right)?;
+    }
+
+    let mut reader = &rcv_buffer.as_ref()[*parsed..*total_read_bytes];
+    while !reader.is_empty() {
+        let header = crate::netlink::msg::NlMsgHeader::read(&mut reader)?;
+        let message_len = header.len as usize;
+        if message_len < crate::netlink::msg::NlMsgHeader::SIZE || message_len % 4 != 0 {
+            return Err(std::io::Error::from(std::io::ErrorKind::InvalidData));
+        };
+
+        let payload_len = message_len - crate::netlink::msg::NlMsgHeader::SIZE;
+        if let Some((_, rest)) = reader.split_at_checked(payload_len) {
+            reader = rest;
+        } else {
+            // should not happen (netlink messages cannot span multiple datagram)
+            return Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+        }
+
+        *parsed += message_len;
+        if !header.is_multi() || header.is_done() {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 /// helper trait to make request from a [`NetlinkSocket`]'s message builder
@@ -350,41 +368,13 @@ where
             }
 
             let rcv_buffer = self.socket.get_mut().rcv_buffer.get_mut();
-            let buf = &mut rcv_buffer.as_mut()[total_read_bytes..];
-            if buf.is_empty() {
-                rcv_buffer.write_all(&datagram[..read_bytes])?;
-            } else if let Some((left, _)) = buf.split_at_mut_checked(read_bytes) {
-                left.copy_from_slice(&datagram[..read_bytes]);
-            } else {
-                let (left, right) = datagram.split_at(buf.len());
-                buf.copy_from_slice(left);
-                rcv_buffer.write_all(right)?;
-            }
-            total_read_bytes += read_bytes;
-
-            let reader_slice = &rcv_buffer.as_ref()[parsed..total_read_bytes];
-            let mut remaining_bytes = reader_slice.len();
-            let mut reader = std::io::Cursor::new(reader_slice);
-            loop {
-                if remaining_bytes < crate::netlink::msg::NlMsgHeader::SIZE {
-                    break;
-                }
-                let header = crate::netlink::msg::NlMsgHeader::read(&mut reader)?;
-                let message_len = header.len as usize;
-                if remaining_bytes < message_len {
-                    break;
-                }
-                let to_skip = message_len - crate::netlink::msg::NlMsgHeader::SIZE;
-                let skipped = crate::netlink::utils::skip_n_bytes(&mut reader, to_skip)?;
-                if skipped != to_skip {
-                    return Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
-                }
-                remaining_bytes -= message_len;
-                parsed += message_len;
-
-                if !header.is_multi() || header.is_done() {
-                    return Ok(parsed);
-                }
+            if receive_step(
+                &mut parsed,
+                &mut total_read_bytes,
+                &datagram[..read_bytes],
+                rcv_buffer,
+            )? {
+                return Ok(parsed);
             }
         }
     }
