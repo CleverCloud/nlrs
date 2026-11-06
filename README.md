@@ -44,7 +44,7 @@ Add nlrs to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-nlrs = "^0.2.3"
+nlrs = "0.2.4"
 ```
 
 ### Basic Usage

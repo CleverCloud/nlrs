@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.2.4 - 2026-11-06
+
+### ✍️ Changed
+
+- We bumped tokio to `1.54.1`.
+
+### ⛑️ Fixed
+
+- We fixed socket reading phase to allow bigger messages to pass.
+
 ## 0.2.3 - 2026-08-20
 
 - We bumped tokio to `1.53.1`.
