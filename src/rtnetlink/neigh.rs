@@ -20,7 +20,7 @@
 
 use crate::MessageBuilder;
 use crate::netlink::msg::NlMsgHeader;
-use crate::netlink::msg::flags::{NLM_F_DUMP, NLM_F_REQUEST};
+use crate::netlink::msg::flags::{NLM_F_ACK, NLM_F_CREATE, NLM_F_DUMP, NLM_F_EXCL, NLM_F_REQUEST};
 
 use super::IpFamily;
 
@@ -88,6 +88,7 @@ pub fn get_neigh_nl_header(header: &mut NlMsgHeader) {
     header.flags = FLAGS;
 }
 
+// TODO : put this in module
 const NUD_INCOMPLETE: u16 = 0x01;
 const NUD_REACHABLE: u16 = 0x02;
 const NUD_STALE: u16 = 0x04;
@@ -148,6 +149,13 @@ pub fn read_neighbour_cache_info(
     } else {
         Ok(None)
     }
+}
+
+pub mod neighbour_attributes {
+    pub const NDA_DST: u16 = 1;
+    pub const NDA_LLADDR: u16 = 2;
+    pub const NDA_CACHEINFO: u16 = 3;
+    pub const NDA_PROBES: u16 = 4;
 }
 
 #[derive(Debug)]
@@ -307,5 +315,114 @@ impl<'a, Buffer: std::io::Write> MessageBuilder<'a> for GetNeighMsgBuilder<'a, B
                     .and_then(core::convert::identity)
             })
             .collect()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NeighbourInput {
+    pub ip_address: std::net::IpAddr,
+    pub link_layer_address: [u8; 6],
+    pub interface_index: i32,
+}
+
+impl NeighbourInput {
+    pub fn new(
+        ip_address: std::net::IpAddr,
+        link_layer_address: [u8; 6],
+        interface_index: i32,
+    ) -> Self {
+        NeighbourInput {
+            ip_address,
+            link_layer_address,
+            interface_index,
+        }
+    }
+}
+
+/// set message type and flags for a RTM_NEWNEIGH request
+pub fn add_neigh_nl_header(header: &mut NlMsgHeader) {
+    const FLAGS: u16 = NLM_F_REQUEST | NLM_F_ACK | NLM_F_EXCL | NLM_F_CREATE;
+    header.r#type = RTM_NEWNEIGH;
+    header.flags = FLAGS;
+}
+
+#[derive(Debug)]
+pub struct AddNeighMsgBuilder<'a, Buffer: std::io::Write> {
+    pub buffer: &'a mut Buffer,
+    pub nl_msg_header: NlMsgHeader,
+    pub nd_msg: NdMsg,
+    pub ip_address: std::net::IpAddr,
+    pub link_layer_address: [u8; 6],
+}
+
+impl<'a, Buffer: std::io::Write> AddNeighMsgBuilder<'a, Buffer> {
+    #[inline]
+    pub fn set_raw_state(&mut self, state: u16) {
+        self.nd_msg.state = state;
+    }
+}
+
+impl<'a, Buffer: std::io::Write> MessageBuilder<'a> for AddNeighMsgBuilder<'a, Buffer> {
+    type Buffer = Buffer;
+    type Input = NeighbourInput;
+    type Output = ();
+    type ParseError = ();
+
+    fn new_with_header(
+        buffer: &'a mut Self::Buffer,
+        mut nl_msg_header: NlMsgHeader,
+        input: Self::Input,
+    ) -> Self {
+        add_neigh_nl_header(&mut nl_msg_header);
+
+        let NeighbourInput {
+            ip_address,
+            link_layer_address,
+            interface_index,
+        } = input;
+
+        Self {
+            buffer,
+            nl_msg_header,
+            nd_msg: NdMsg {
+                ifindex: interface_index,
+                state: NUD_PERMANENT,
+                ..NdMsg::new_with_family(IpFamily::from(&ip_address))
+            },
+            ip_address,
+            link_layer_address,
+        }
+    }
+
+    fn build(mut self) -> Result<(&'a mut Self::Buffer, usize), std::io::Error> {
+        let mut written_bytes: usize = 0;
+        self.nl_msg_header.set_playload_length(
+            NdMsg::SIZE
+                + crate::netlink::attr::set_ip_address_attr_length_aligned(&self.ip_address)
+                + crate::netlink::attr::set_attr_length_aligned(self.link_layer_address.len()),
+        );
+
+        written_bytes += self.nl_msg_header.write(self.buffer)?;
+        written_bytes += self.nd_msg.write(self.buffer)?;
+
+        written_bytes += crate::netlink::attr::write_ip_address_attr(
+            self.buffer,
+            neighbour_attributes::NDA_DST,
+            &self.ip_address,
+        )?;
+        written_bytes += crate::netlink::attr::write_array_attr(
+            self.buffer,
+            neighbour_attributes::NDA_LLADDR,
+            self.link_layer_address,
+        )?;
+
+        Ok((self.buffer, written_bytes))
+    }
+
+    fn parse_response(
+        reader: &mut impl std::io::Read,
+    ) -> Result<Self::Output, crate::ResponseError<Self::ParseError>> {
+        crate::netlink::msg::validate_ack(reader)
+            .map_err(crate::ResponseError::<Self::ParseError>::HeaderParse)
     }
 }
