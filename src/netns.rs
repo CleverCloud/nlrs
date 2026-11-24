@@ -238,27 +238,48 @@ fn wait_for_creation_child(pid: i32) -> Result<(), NetnsCreationError> {
 }
 
 fn is_network_namespace(path: &Path) -> bool {
-    // Linux encodes _IO and open flags differently on these architectures.
-    const MIPS: bool = cfg!(any(
+    // NS_GET_NSTYPE is _IO(0xb7, 3). These architectures set bit 29 for _IOC_NONE.
+    #[cfg(any(
         target_arch = "mips",
         target_arch = "mips32r6",
         target_arch = "mips64",
         target_arch = "mips64r6",
-    ));
-    const SPARC: bool = cfg!(any(target_arch = "sparc", target_arch = "sparc64"));
-    const NS_GET_NSTYPE: IoctlRequest =
-        if MIPS || SPARC || cfg!(any(target_arch = "powerpc", target_arch = "powerpc64")) {
-            0x2000_b703
-        } else {
-            0xb703
-        };
-    const O_NONBLOCK_NOCTTY: c_int = if MIPS {
-        0x0880
-    } else if SPARC {
-        0xc000
-    } else {
-        0x0900
-    };
+        target_arch = "powerpc",
+        target_arch = "powerpc64",
+        target_arch = "sparc",
+        target_arch = "sparc64",
+    ))]
+    const NS_GET_NSTYPE: IoctlRequest = 0x2000_b703;
+    #[cfg(not(any(
+        target_arch = "mips",
+        target_arch = "mips32r6",
+        target_arch = "mips64",
+        target_arch = "mips64r6",
+        target_arch = "powerpc",
+        target_arch = "powerpc64",
+        target_arch = "sparc",
+        target_arch = "sparc64",
+    )))]
+    const NS_GET_NSTYPE: IoctlRequest = 0xb703;
+
+    #[cfg(any(
+        target_arch = "mips",
+        target_arch = "mips32r6",
+        target_arch = "mips64",
+        target_arch = "mips64r6",
+    ))]
+    const O_NONBLOCK_NOCTTY: c_int = 0x0880;
+    #[cfg(any(target_arch = "sparc", target_arch = "sparc64"))]
+    const O_NONBLOCK_NOCTTY: c_int = 0xc000;
+    #[cfg(not(any(
+        target_arch = "mips",
+        target_arch = "mips32r6",
+        target_arch = "mips64",
+        target_arch = "mips64r6",
+        target_arch = "sparc",
+        target_arch = "sparc64",
+    )))]
+    const O_NONBLOCK_NOCTTY: c_int = 0x0900;
 
     // Skip special files and use a nonblocking open in case a FIFO replaces the path.
     if !std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
