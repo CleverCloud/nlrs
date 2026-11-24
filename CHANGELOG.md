@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⛑️ Fixed
+
+- Network namespace creation and execution now report signal termination of their helper children. Sync and async execution also report unexpected nonzero exit codes.
+- Network namespace creation verifies existing paths, so leftover placeholders are reported as `AlreadyExists`.
+
 ## 0.2.4 - 2026-11-06
 
 ### ✍️ Changed

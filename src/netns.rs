@@ -40,7 +40,23 @@
 //! }
 //! ```
 use core::ffi::{CStr, c_char, c_int, c_long, c_ulong, c_void};
-use std::{ffi::CString, os::fd::AsRawFd, path::Path};
+#[cfg(feature = "tokio-netns")]
+use std::task::Poll;
+use std::{
+    ffi::CString,
+    io,
+    os::{
+        fd::AsRawFd,
+        unix::{fs::OpenOptionsExt, process::ExitStatusExt},
+    },
+    path::Path,
+    process::ExitStatus,
+};
+
+#[cfg(target_env = "musl")]
+type IoctlRequest = c_int;
+#[cfg(not(target_env = "musl"))]
+type IoctlRequest = c_ulong;
 
 unsafe extern "C" {
     /* shed.h */
@@ -48,6 +64,8 @@ unsafe extern "C" {
     fn unshare(flags: c_int) -> c_int;
     #[doc(hidden)]
     fn setns(fd: i32, nstype: i32) -> i32;
+
+    fn ioctl(fd: c_int, request: IoctlRequest, ...) -> c_int;
 
     /* sys/mount.h */
     #[doc(hidden)]
@@ -97,10 +115,34 @@ pub const NETNS_PATH: &str = "/run/netns";
 /// `/proc/self/ns/net`, path where the network namespace of the current proccess is located
 pub const PROC_NETNS_PATH: &str = "/proc/self/ns/net";
 
-// see man 2 wait
-#[doc(hidden)]
-const fn wexitstatus(status: i32) -> i32 {
-    ((status) & 0xff00) >> 8
+fn wait_for_child_status(pid: i32, options: i32) -> io::Result<Option<i32>> {
+    wait_for_child_status_with(|status| match unsafe { waitpid(pid, status, options) } {
+        -1 => Err(io::Error::last_os_error()),
+        pid => Ok(pid),
+    })
+}
+
+fn wait_for_child_status_with(
+    mut wait: impl FnMut(&mut i32) -> io::Result<i32>,
+) -> io::Result<Option<i32>> {
+    let mut status = 0;
+    loop {
+        match wait(&mut status) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+            Ok(0) => return Ok(None),
+            Ok(_) => {
+                let status = ExitStatus::from_raw(status);
+                return status.code().map(Some).ok_or_else(|| {
+                    io::Error::other(format!("network namespace helper terminated ({status})"))
+                });
+            }
+        }
+    }
+}
+
+fn wait_for_child(pid: i32) -> io::Result<i32> {
+    Ok(wait_for_child_status(pid, 0)?.expect("blocking waitpid reports a child"))
 }
 
 /// error produced when creating a network namespace
@@ -123,10 +165,7 @@ impl core::fmt::Display for NetnsCreationError {
                 write!(f, "network namespace file creation failed: {error}")
             }
             NetnsCreationError::ForkFailed(error) => {
-                write!(
-                    f,
-                    "forking before mounting network namespace file failed: {error}"
-                )
+                write!(f, "network namespace creation helper failed: {error}")
             }
             NetnsCreationError::UnshareFailed(error) => {
                 write!(
@@ -174,7 +213,7 @@ pub fn open_netns_file(netns_name: &str) -> Result<std::fs::File, std::io::Error
     std::fs::File::open(&netns_path)
 }
 
-/// check if a persistent named network namespace exist
+/// Check whether the named network namespace path exists.
 #[inline]
 pub fn netns_exists(netns_name: &str) -> bool {
     let netns_dir = Path::new(NETNS_PATH);
@@ -183,8 +222,62 @@ pub fn netns_exists(netns_name: &str) -> bool {
     netns_path.exists()
 }
 
+fn wait_for_creation_child(pid: i32) -> Result<(), NetnsCreationError> {
+    let status = wait_for_child(pid).map_err(NetnsCreationError::ForkFailed)?;
+    if status == 0 {
+        Ok(())
+    } else if status < 128 {
+        Err(NetnsCreationError::UnshareFailed(
+            io::Error::from_raw_os_error(status),
+        ))
+    } else {
+        Err(NetnsCreationError::MountFailed(
+            io::Error::from_raw_os_error(status - 128),
+        ))
+    }
+}
+
+fn is_network_namespace(path: &Path) -> bool {
+    // Linux encodes _IO and open flags differently on these architectures.
+    const MIPS: bool = cfg!(any(
+        target_arch = "mips",
+        target_arch = "mips32r6",
+        target_arch = "mips64",
+        target_arch = "mips64r6",
+    ));
+    const SPARC: bool = cfg!(any(target_arch = "sparc", target_arch = "sparc64"));
+    const NS_GET_NSTYPE: IoctlRequest =
+        if MIPS || SPARC || cfg!(any(target_arch = "powerpc", target_arch = "powerpc64")) {
+            0x2000_b703
+        } else {
+            0xb703
+        };
+    const O_NONBLOCK_NOCTTY: c_int = if MIPS {
+        0x0880
+    } else if SPARC {
+        0xc000
+    } else {
+        0x0900
+    };
+
+    // Skip special files and use a nonblocking open in case a FIFO replaces the path.
+    if !std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+        return false;
+    }
+
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NONBLOCK_NOCTTY)
+        .open(path)
+        .is_ok_and(|file| {
+            file.metadata().is_ok_and(|metadata| metadata.is_file())
+                && unsafe { ioctl(file.as_raw_fd(), NS_GET_NSTYPE) } == CLONE_NEWNET
+        })
+}
+
 /// create a persistent named network namespace.
 /// need root or CAP_NET_ADMIN permissions.
+/// See [`create_netns_with_path`] for handling of existing paths.
 pub fn create_netns(name: &str) -> Result<(), NetnsCreationError> {
     let netns_dir = Path::new(NETNS_PATH);
     if !netns_dir.exists()
@@ -199,15 +292,24 @@ pub fn create_netns(name: &str) -> Result<(), NetnsCreationError> {
 
 /// create a persistent network namespace file.
 /// need root, CAP_NET_ADMIN or root+mount unshare permissions.
+///
+/// An existing path succeeds if it can be verified as a network namespace
+/// using `NS_GET_NSTYPE` (Linux 4.11 or later). Other existing paths return
+/// [`NetnsCreationError::NetnsFileCreationFailed`] with
+/// [`std::io::ErrorKind::AlreadyExists`]. A failed creation can leave a
+/// placeholder on disk. Confirm that it is stale before removing it to retry.
 pub fn create_netns_with_path(netns_path: &Path) -> Result<(), NetnsCreationError> {
-    if netns_path.exists() {
-        return Ok(());
+    if let Err(error) = std::fs::File::create_new(netns_path) {
+        // An existing path may be a placeholder from a failed or active creator.
+        if error.kind() == io::ErrorKind::AlreadyExists && is_network_namespace(netns_path) {
+            return Ok(());
+        }
+        return Err(NetnsCreationError::NetnsFileCreationFailed(error));
     }
 
-    std::fs::File::create(netns_path).map_err(NetnsCreationError::NetnsFileCreationFailed)?;
-
     let source = unsafe { CString::new(PROC_NETNS_PATH).unwrap_unchecked() };
-    let target = unsafe { CString::new(netns_path.to_str().unwrap_unchecked()).unwrap_unchecked() };
+    let target = CString::new(netns_path.as_os_str().as_encoded_bytes())
+        .map_err(|error| NetnsCreationError::NetnsFileCreationFailed(error.into()))?;
 
     match unsafe { fork() } {
         -1 => Err(NetnsCreationError::ForkFailed(
@@ -232,22 +334,7 @@ pub fn create_netns_with_path(netns_path: &Path) -> Result<(), NetnsCreationErro
             }
             std::process::exit(0);
         }
-        child_pid => {
-            let mut status = 0;
-            unsafe { waitpid(child_pid, &mut status, 0) };
-            let status = wexitstatus(status);
-            if status == 0 {
-                Ok(())
-            } else if status < 128 {
-                Err(NetnsCreationError::UnshareFailed(
-                    std::io::Error::from_raw_os_error(status),
-                ))
-            } else {
-                Err(NetnsCreationError::MountFailed(
-                    std::io::Error::from_raw_os_error(status - 128),
-                ))
-            }
-        }
+        child_pid => wait_for_creation_child(child_pid),
     }
 }
 
@@ -265,8 +352,9 @@ pub fn delete_netns_with_path(netns_path: &Path) -> Result<(), NetnsDeletionErro
         return Ok(());
     }
 
-    let path_cstr =
-        unsafe { CString::new(netns_path.to_str().unwrap_unchecked()).unwrap_unchecked() };
+    let path_cstr = CString::new(netns_path.as_os_str().as_encoded_bytes()).map_err(|error| {
+        NetnsDeletionError::UnmountFailed(io::Error::new(io::ErrorKind::InvalidInput, error))
+    })?;
 
     unsafe {
         if umount2(path_cstr.as_ptr(), MNT_DETACH) < 0 {
@@ -503,7 +591,7 @@ impl core::fmt::Display for NetnsEnterError {
             NetnsEnterError::ReadingErrorFailed(error) => {
                 write!(
                     f,
-                    "reading network namespace execution error failed: {error}"
+                    "reading network namespace execution result failed: {error}"
                 )
             }
             NetnsEnterError::SetNetnsFailed => {
@@ -514,6 +602,29 @@ impl core::fmt::Display for NetnsEnterError {
 }
 
 impl core::error::Error for NetnsEnterError {}
+
+// When the helper exits with code 1, shared must point to its callback error.
+unsafe fn execution_result(
+    status: io::Result<i32>,
+    shared: *const u8,
+) -> Result<Result<(), NetnsExecutionError<()>>, NetnsEnterError> {
+    match status.map_err(NetnsEnterError::ReadingErrorFailed)? {
+        0 => Ok(Ok(())),
+        1 => {
+            let mut reader =
+                unsafe { core::slice::from_raw_parts(shared, NetnsInnerExecutionError::SIZE) };
+            let inner_error: NetnsInnerExecutionError =
+                crate::netlink::utils::transpose_read(&mut reader)
+                    .map_err(NetnsEnterError::ReadingErrorFailed)?;
+
+            Ok(Err(inner_error.into()))
+        }
+        2 => Err(NetnsEnterError::SetNetnsFailed),
+        code => Err(NetnsEnterError::ReadingErrorFailed(io::Error::other(
+            format!("network namespace helper exited with unexpected code {code}"),
+        ))),
+    }
+}
 
 const PROT_READ: c_int = 1;
 const PROT_WRITE: c_int = 2;
@@ -539,21 +650,36 @@ impl WaitPidFuture {
 
 #[cfg(feature = "tokio-netns")]
 impl std::future::Future for WaitPidFuture {
-    type Output = i32;
+    type Output = io::Result<i32>;
 
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
+    ) -> Poll<Self::Output> {
         const WNOHANG: i32 = 1;
-        let mut status = 0;
+        let pid = self.pid;
+        poll_child_status(
+            || wait_for_child_status(pid, WNOHANG),
+            || self.sigchld.poll_recv(cx),
+        )
+    }
+}
 
-        let still_running = unsafe { waitpid(self.pid, &mut status, WNOHANG) };
-        if still_running == 0 {
-            _ = std::pin::Pin::new(&mut self.sigchld).poll_recv(cx);
-            std::task::Poll::Pending
-        } else {
-            std::task::Poll::Ready(wexitstatus(status))
+#[cfg(feature = "tokio-netns")]
+fn poll_child_status(
+    mut wait: impl FnMut() -> io::Result<Option<i32>>,
+    mut poll_sigchld: impl FnMut() -> Poll<Option<()>>,
+) -> Poll<io::Result<i32>> {
+    loop {
+        match wait() {
+            Ok(Some(code)) => return Poll::Ready(Ok(code)),
+            Err(error) => return Poll::Ready(Err(error)),
+            Ok(None) => {
+                // A notification may have arrived since waitpid checked the child.
+                if poll_sigchld().is_pending() {
+                    return Poll::Pending;
+                }
+            }
         }
     }
 }
@@ -618,27 +744,11 @@ pub fn execute_into_netns<I, P>(
             }
         },
         // parent process
-        child_pid => {
-            let mut status = 0;
-            unsafe { waitpid(child_pid, &mut status, 0) };
-            wexitstatus(status)
-        }
+        child_pid => wait_for_child(child_pid),
     };
     drop(netns_file);
 
-    let result = if status == 2 {
-        Err(NetnsEnterError::SetNetnsFailed)
-    } else if status == 1 {
-        let mut reader =
-            unsafe { core::slice::from_raw_parts(shared, NetnsInnerExecutionError::SIZE) };
-        let inner_error: NetnsInnerExecutionError =
-            crate::netlink::utils::transpose_read(&mut reader)
-                .map_err(NetnsEnterError::ReadingErrorFailed)?;
-
-        Ok(Err(inner_error.into()))
-    } else {
-        Ok(Ok(()))
-    };
+    let result = unsafe { execution_result(status, shared) };
 
     unsafe { munmap(shared as *mut c_void, NetnsInnerExecutionError::SIZE) };
 
@@ -710,21 +820,12 @@ pub async fn async_execute_into_netns<I, P>(
     };
     drop(netns_file);
 
-    let result = if status == 2 {
-        Err(NetnsEnterError::SetNetnsFailed)
-    } else if status == 1 {
-        let mut reader =
-            unsafe { core::slice::from_raw_parts(shared, NetnsInnerExecutionError::SIZE) };
-        let inner_error: NetnsInnerExecutionError =
-            crate::netlink::utils::transpose_read(&mut reader)
-                .map_err(NetnsEnterError::ReadingErrorFailed)?;
-
-        Ok(Err(inner_error.into()))
-    } else {
-        Ok(Ok(()))
-    };
+    let result = unsafe { execution_result(status, shared) };
 
     unsafe { munmap(shared as *mut c_void, NetnsInnerExecutionError::SIZE) };
 
     result
 }
+
+#[cfg(test)]
+mod tests;
