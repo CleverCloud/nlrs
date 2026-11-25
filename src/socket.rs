@@ -176,7 +176,7 @@ fn receive_step<Rcv: Write + AsRef<[u8]> + AsMut<[u8]>>(
     while !reader.is_empty() {
         let header = crate::netlink::msg::NlMsgHeader::read(&mut reader)?;
         let message_len = header.len as usize;
-        if message_len < crate::netlink::msg::NlMsgHeader::SIZE || message_len % 4 != 0 {
+        if message_len < crate::netlink::msg::NlMsgHeader::SIZE || !message_len.is_multiple_of(4) {
             return Err(std::io::Error::from(std::io::ErrorKind::InvalidData));
         };
 
