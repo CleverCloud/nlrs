@@ -44,7 +44,7 @@ Add nlrs to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-nlrs = "0.2.4"
+nlrs = "0.2.5"
 ```
 
 ### Basic Usage
@@ -69,32 +69,6 @@ fn main() {
 ```
 
 For more detailed examples and API documentation, see the [documentation](https://docs.rs/nlrs).
-
-### Network namespace helper failures
-
-Namespace creation reports a helper child terminated by a signal as
-`NetnsCreationError::ForkFailed`. A failed creation can leave a placeholder.
-Creation at an existing path succeeds only when Linux verifies it as a network
-namespace (`NS_GET_NSTYPE`, Linux 4.11 or later). An unverified path returns
-`NetnsCreationError::NetnsFileCreationFailed` with `AlreadyExists`. Confirm
-that a placeholder is stale before removing it to retry. `netns_exists` checks
-path presence. The path-based create and delete APIs preserve non-UTF-8 OS
-path bytes.
-
-Both `execute_into_netns` and `async_execute_into_netns` report signal
-termination and unexpected nonzero exit codes as
-`NetnsEnterError::ReadingErrorFailed`. The error includes the signal or exit
-code. Callback errors are returned in the inner `Result`.
-
-### Descriptors inherited by the namespace helper
-
-The execution helpers fork, and the child holds a copy of every descriptor of
-the process until it exits. A socket the parent closes meanwhile stays open,
-and so does the network namespace it belongs to. `execute_into_netns_closing_descriptors`
-and `async_execute_into_netns_closing_descriptors` close every inherited
-descriptor except stdio and the ones passed in `keep` before calling the
-function, using `close_range(2)` (Linux 5.9 or later), else one `close` per
-descriptor below the descriptor limit. Pass every descriptor the function uses.
 
 ## License
 

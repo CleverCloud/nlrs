@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.2.5 - 2026-11-25
+
 ### ✨ Added
 
-- `execute_into_netns_closing_descriptors` and `async_execute_into_netns_closing_descriptors` close, in the forked child, every inherited descriptor except stdio and the ones the caller keeps. Otherwise the child holds a copy of each descriptor of the process until it exits, which can keep a deleted network namespace alive, for instance through a socket the parent has already closed.
+- `execute_into_netns_closing_descriptors` and `async_execute_into_netns_closing_descriptors` close, in the forked child, every inherited descriptor except stdio and the ones the caller keeps.
+Otherwise the child holds a copy of each descriptor of the process until it exits, which can keep a deleted network namespace alive, for instance through a socket the parent has already closed.
+- Message to set a link a mac address 
+- Message to add a neighbour in the neighbour arp table.
 
 ### ⛑️ Fixed
 
