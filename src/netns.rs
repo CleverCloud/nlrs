@@ -46,7 +46,7 @@ use std::{
     ffi::CString,
     io,
     os::{
-        fd::AsRawFd,
+        fd::{AsRawFd, BorrowedFd, RawFd},
         unix::{fs::OpenOptionsExt, process::ExitStatusExt},
     },
     path::Path,
@@ -104,9 +104,20 @@ unsafe extern "C" {
     #[doc(hidden)]
     fn munmap(addr: *mut c_void, length: usize) -> c_int;
 
+    /* unistd.h */
+    #[doc(hidden)]
+    fn syscall(number: c_long, ...) -> c_long;
+    #[doc(hidden)]
+    fn close(fd: c_int) -> c_int;
+    #[doc(hidden)]
+    fn sysconf(name: c_int) -> c_long;
+
 }
 
 const CLONE_NEWNET: i32 = 0x40000000;
+/// `close_range(2)`, Linux 5.9 or later; one number on every architecture.
+const SYS_CLOSE_RANGE: c_long = 436;
+const SC_OPEN_MAX: c_int = 4;
 const MS_BIND: u64 = 4096;
 const MNT_DETACH: i32 = 2;
 
@@ -143,6 +154,42 @@ fn wait_for_child_status_with(
 
 fn wait_for_child(pid: i32) -> io::Result<i32> {
     Ok(wait_for_child_status(pid, 0)?.expect("blocking waitpid reports a child"))
+}
+
+/// Close every descriptor from 3 upwards except `keep`, which is sorted and
+/// deduplicated. It runs in a forked child, so it only makes system calls.
+unsafe fn close_inherited_descriptors(keep: &[RawFd], close_between: unsafe fn(u32, u32)) {
+    let mut first = 3u32;
+    for &fd in keep {
+        let Ok(fd) = u32::try_from(fd) else { continue };
+        if fd < first {
+            continue;
+        }
+        if fd > first {
+            unsafe { close_between(first, fd - 1) };
+        }
+        first = fd.saturating_add(1);
+    }
+    unsafe { close_between(first, u32::MAX) };
+}
+
+/// `close_range(2)`, falling back to one `close` per descriptor below the
+/// descriptor limit on kernels older than 5.9.
+unsafe fn close_range_or_each(first: u32, last: u32) {
+    if unsafe { syscall(SYS_CLOSE_RANGE, first, last, 0u32) } == 0 {
+        return;
+    }
+    unsafe { close_each(first, last) }
+}
+
+unsafe fn close_each(first: u32, last: u32) {
+    let limit = match unsafe { sysconf(SC_OPEN_MAX) } {
+        limit if limit > 0 => u32::try_from(limit).unwrap_or(u32::MAX),
+        _ => 1024,
+    };
+    for fd in first..=last.min(limit.saturating_sub(1)) {
+        unsafe { close(fd as c_int) };
+    }
 }
 
 /// error produced when creating a network namespace
@@ -707,10 +754,52 @@ fn poll_child_status(
 
 /// helper to execute a function inside a network namespace
 /// need root or CAP_NET_ADMIN permissions.
+///
+/// The forked child inherits every descriptor of the process; see
+/// [`execute_into_netns_closing_descriptors`] to close them.
 pub fn execute_into_netns<I, P>(
     network_namespace_name: &str,
     function: fn(I) -> Result<(), NetnsExecutionError<P>>,
     function_input: I,
+) -> Result<Result<(), NetnsExecutionError<()>>, NetnsEnterError> {
+    execute_into_netns_keeping(network_namespace_name, function, function_input, None)
+}
+
+/// [`execute_into_netns`], whose child closes every descriptor it inherited
+/// except stdio and `keep` before calling `function`.
+///
+/// A forked child holds a copy of each descriptor of the parent until it
+/// exits, so without this a socket the parent closes keeps its network
+/// namespace, a pipe keeps its reader from seeing end of file, and a listening
+/// socket stays bound. Pass in `keep` every descriptor `function` uses. Uses
+/// `close_range(2)` (Linux 5.9 or later), else one `close` per descriptor
+/// below the descriptor limit.
+pub fn execute_into_netns_closing_descriptors<I, P>(
+    network_namespace_name: &str,
+    function: fn(I) -> Result<(), NetnsExecutionError<P>>,
+    function_input: I,
+    keep: &[BorrowedFd<'_>],
+) -> Result<Result<(), NetnsExecutionError<()>>, NetnsEnterError> {
+    execute_into_netns_keeping(
+        network_namespace_name,
+        function,
+        function_input,
+        Some(kept_descriptors(keep)),
+    )
+}
+
+fn kept_descriptors(keep: &[BorrowedFd<'_>]) -> Vec<RawFd> {
+    let mut keep: Vec<RawFd> = keep.iter().map(AsRawFd::as_raw_fd).collect();
+    keep.sort_unstable();
+    keep.dedup();
+    keep
+}
+
+fn execute_into_netns_keeping<I, P>(
+    network_namespace_name: &str,
+    function: fn(I) -> Result<(), NetnsExecutionError<P>>,
+    function_input: I,
+    keep: Option<Vec<RawFd>>,
 ) -> Result<Result<(), NetnsExecutionError<()>>, NetnsEnterError> {
     let netns_dir = Path::new(NETNS_PATH);
     if !netns_dir.exists() {
@@ -745,6 +834,9 @@ pub fn execute_into_netns<I, P>(
         0 => unsafe {
             if setns(netns_fd, CLONE_NEWNET) < 0 {
                 std::process::exit(2);
+            }
+            if let Some(keep) = &keep {
+                close_inherited_descriptors(keep, close_range_or_each);
             }
 
             match (function)(function_input) {
@@ -779,10 +871,38 @@ pub fn execute_into_netns<I, P>(
 #[cfg(feature = "tokio-netns")]
 /// async helper to execute a function inside a network namespace
 /// need root or CAP_NET_ADMIN permissions.
+///
+/// The forked child inherits every descriptor of the process; see
+/// [`async_execute_into_netns_closing_descriptors`] to close them.
 pub async fn async_execute_into_netns<I, P>(
     network_namespace_name: &str,
     function: fn(I) -> Result<(), NetnsExecutionError<P>>,
     function_input: I,
+) -> Result<Result<(), NetnsExecutionError<()>>, NetnsEnterError> {
+    async_execute_into_netns_keeping(network_namespace_name, function, function_input, None).await
+}
+
+#[cfg(feature = "tokio-netns")]
+/// [`async_execute_into_netns`], whose child closes every descriptor it
+/// inherited except stdio and `keep`; see
+/// [`execute_into_netns_closing_descriptors`].
+pub async fn async_execute_into_netns_closing_descriptors<I, P>(
+    network_namespace_name: &str,
+    function: fn(I) -> Result<(), NetnsExecutionError<P>>,
+    function_input: I,
+    keep: &[BorrowedFd<'_>],
+) -> Result<Result<(), NetnsExecutionError<()>>, NetnsEnterError> {
+    let keep = kept_descriptors(keep);
+    async_execute_into_netns_keeping(network_namespace_name, function, function_input, Some(keep))
+        .await
+}
+
+#[cfg(feature = "tokio-netns")]
+async fn async_execute_into_netns_keeping<I, P>(
+    network_namespace_name: &str,
+    function: fn(I) -> Result<(), NetnsExecutionError<P>>,
+    function_input: I,
+    keep: Option<Vec<RawFd>>,
 ) -> Result<Result<(), NetnsExecutionError<()>>, NetnsEnterError> {
     let netns_dir = Path::new(NETNS_PATH);
     if !netns_dir.exists() {
@@ -817,6 +937,9 @@ pub async fn async_execute_into_netns<I, P>(
         0 => unsafe {
             if setns(netns_fd, CLONE_NEWNET) < 0 {
                 std::process::exit(2);
+            }
+            if let Some(keep) = &keep {
+                close_inherited_descriptors(keep, close_range_or_each);
             }
 
             match (function)(function_input) {

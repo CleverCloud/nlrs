@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 use super::*;
-use std::process::{Child, Command, Stdio};
+use std::{
+    os::fd::AsFd,
+    process::{Child, Command, Stdio},
+};
 
 struct TestChild(Child);
 
@@ -227,4 +230,105 @@ fn async_execution_rejects_unexpected_exit_code() {
     let error = async_execution_error("exit 42");
     assert!(matches!(error, NetnsEnterError::ReadingErrorFailed(error)
         if error.to_string().contains("code 42")));
+}
+
+unsafe extern "C" {
+    fn fcntl(fd: c_int, command: c_int, ...) -> c_int;
+    fn _exit(status: c_int) -> !;
+}
+
+const F_GETFD: c_int = 1;
+
+fn is_open(fd: RawFd) -> bool {
+    (unsafe { fcntl(fd, F_GETFD) }) >= 0
+}
+
+/// Forks, closes the inherited descriptors in the child with `close_between`
+/// and returns the child's exit code: 0 when only stdio and the kept
+/// descriptor survived.
+fn closing_in_child(close_between: unsafe fn(u32, u32)) -> i32 {
+    let closed = std::fs::File::open("/dev/null").expect("open /dev/null");
+    let kept = std::fs::File::open("/dev/null").expect("open /dev/null");
+    let after = std::fs::File::open("/dev/null").expect("open /dev/null");
+    let (closed, kept, after) = (closed.as_raw_fd(), kept.as_raw_fd(), after.as_raw_fd());
+    match unsafe { fork() } {
+        -1 => panic!("fork: {}", io::Error::last_os_error()),
+        0 => unsafe {
+            close_inherited_descriptors(&[kept], close_between);
+            let code = if !(0..3).all(is_open) {
+                10
+            } else if is_open(closed) || is_open(after) {
+                11
+            } else if !is_open(kept) {
+                12
+            } else {
+                0
+            };
+            _exit(code)
+        },
+        pid => wait_for_child(pid).expect("wait for the child"),
+    }
+}
+
+#[test]
+fn closing_keeps_stdio_and_the_kept_descriptors_only() {
+    assert_eq!(closing_in_child(close_range_or_each), 0);
+}
+
+#[test]
+fn closing_one_by_one_keeps_stdio_and_the_kept_descriptors_only() {
+    assert_eq!(closing_in_child(close_each), 0);
+}
+
+fn only_the_kept_descriptor_is_open(
+    (closed, kept): (RawFd, RawFd),
+) -> Result<(), NetnsExecutionError<()>> {
+    if is_open(closed) || !is_open(kept) {
+        // An exit code no helper uses, reported as `ReadingErrorFailed`.
+        unsafe { _exit(42) }
+    }
+    Ok(())
+}
+
+/// Runs inside the `nlrs-descriptors` namespace. Needs a disposable user and
+/// mount namespace, for instance:
+///
+/// ```sh
+/// unshare -rnm --propagation private sh -c 'mount -t tmpfs none /run &&
+///   mkdir /run/netns && ip netns add nlrs-descriptors &&
+///   cargo test --all-features execution_closes_inherited_descriptors -- --ignored'
+/// ```
+#[test]
+#[ignore = "needs the nlrs-descriptors network namespace"]
+fn execution_closes_inherited_descriptors() {
+    let closed = std::fs::File::open("/dev/null").expect("open /dev/null");
+    let kept = std::fs::File::open("/dev/null").expect("open /dev/null");
+    let input = (closed.as_raw_fd(), kept.as_raw_fd());
+    let result = execute_into_netns_closing_descriptors(
+        "nlrs-descriptors",
+        only_the_kept_descriptor_is_open,
+        input,
+        &[kept.as_fd()],
+    );
+    assert!(matches!(result, Ok(Ok(()))), "got {result:?}");
+    #[cfg(feature = "tokio-netns")]
+    {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .expect("build Tokio runtime");
+        let result = runtime.block_on(async_execute_into_netns_closing_descriptors(
+            "nlrs-descriptors",
+            only_the_kept_descriptor_is_open,
+            input,
+            &[kept.as_fd()],
+        ));
+        assert!(matches!(result, Ok(Ok(()))), "got {result:?}");
+    }
+    // The plain helpers keep inheriting every descriptor.
+    let result = execute_into_netns("nlrs-descriptors", only_the_kept_descriptor_is_open, input);
+    assert!(
+        matches!(result, Err(NetnsEnterError::ReadingErrorFailed(_))),
+        "got {result:?}"
+    );
 }
