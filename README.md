@@ -86,6 +86,16 @@ termination and unexpected nonzero exit codes as
 `NetnsEnterError::ReadingErrorFailed`. The error includes the signal or exit
 code. Callback errors are returned in the inner `Result`.
 
+### Descriptors inherited by the namespace helper
+
+The execution helpers fork, and the child holds a copy of every descriptor of
+the process until it exits. A socket the parent closes meanwhile stays open,
+and so does the network namespace it belongs to. `execute_into_netns_closing_descriptors`
+and `async_execute_into_netns_closing_descriptors` close every inherited
+descriptor except stdio and the ones passed in `keep` before calling the
+function, using `close_range(2)` (Linux 5.9 or later), else one `close` per
+descriptor below the descriptor limit. Pass every descriptor the function uses.
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
